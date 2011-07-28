@@ -78,21 +78,34 @@ namespace MongoDB.Driver.Internal {
             startingFrom = buffer.ReadInt32();
             numberReturned = buffer.ReadInt32();
 
-            using (BsonReader bsonReader = BsonReader.Create(buffer, readerSettings)) {
-                if ((responseFlags & ResponseFlags.CursorNotFound) != 0) {
-                    throw new MongoQueryException("Cursor not found.");
-                }
-                if ((responseFlags & ResponseFlags.QueryFailure) != 0) {
-                    var document = BsonDocument.ReadFrom(bsonReader);
-                    var err = document["$err", null].AsString ?? "Unknown error.";
-                    var message = string.Format("QueryFailure flag was {0} (response was {1}).", err, document.ToJson());
-                    throw new MongoQueryException(message);
-                }
 
+            if ((responseFlags & ResponseFlags.CursorNotFound) != 0)
+            {
+                throw new MongoQueryException("Cursor not found.");
+            }
+            else if ((responseFlags & ResponseFlags.QueryFailure) != 0)
+            {
+                BsonDocument document = null;
+                using (BsonReader bsonReader = BsonReader.Create(buffer, readerSettings))
+                {
+                    document = BsonDocument.ReadFrom(bsonReader);
+                }
+                var err = document["$err", null].AsString ?? "Unknown error.";
+                var message = string.Format("QueryFailure flag was {0} (response was {1}).", err, document.ToJson());
+                throw new MongoQueryException(message);
+            }
+            else
+            {
+                int i = 0;
                 documents = new List<TDocument>(numberReturned);
-                while (buffer.Position - messageStartPosition < messageLength) {
-                    var document = (TDocument) BsonSerializer.Deserialize(bsonReader, typeof(TDocument), serializationOptions);
-                    documents.Add(document);
+                while (buffer.Position - messageStartPosition < messageLength && i < numberReturned)
+                {
+                    using (BsonReader bsonReader = BsonReader.Create(buffer, readerSettings))
+                    {
+                        var document = (TDocument)BsonSerializer.Deserialize(bsonReader, typeof(TDocument), serializationOptions);
+                        documents.Add(document);
+                    }
+                    i++;
                 }
             }
         }
