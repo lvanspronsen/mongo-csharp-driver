@@ -23,8 +23,10 @@ using MongoDB.Bson;
 using MongoDB.Bson.IO;
 using MongoDB.Bson.Serialization;
 
-namespace MongoDB.Driver.Internal {
-    internal class MongoReplyMessage<TDocument> : MongoMessage {
+namespace MongoDB.Driver.Internal
+{
+    internal class MongoReplyMessage<TDocument> : MongoMessage
+    {
         #region private fields
         private BsonBinaryReaderSettings readerSettings;
         private ResponseFlags responseFlags;
@@ -38,29 +40,35 @@ namespace MongoDB.Driver.Internal {
         internal MongoReplyMessage(
             BsonBinaryReaderSettings readerSettings
         )
-            : base(MessageOpcode.Reply) {
+            : base(MessageOpcode.Reply)
+        {
             this.readerSettings = readerSettings;
         }
         #endregion
 
         #region internal properties
-        internal ResponseFlags ResponseFlags {
+        internal ResponseFlags ResponseFlags
+        {
             get { return responseFlags; }
         }
 
-        internal long CursorId {
+        internal long CursorId
+        {
             get { return cursorId; }
         }
 
-        internal int StartingFrom {
+        internal int StartingFrom
+        {
             get { return startingFrom; }
         }
 
-        internal int NumberReturned {
+        internal int NumberReturned
+        {
             get { return numberReturned; }
         }
 
-        internal List<TDocument> Documents {
+        internal List<TDocument> Documents
+        {
             get { return documents; }
         }
         #endregion
@@ -69,43 +77,35 @@ namespace MongoDB.Driver.Internal {
         internal void ReadFrom(
             BsonBuffer buffer,
             IBsonSerializationOptions serializationOptions
-        ) {
+        )
+        {
             var messageStartPosition = buffer.Position;
 
             ReadMessageHeaderFrom(buffer);
-            responseFlags = (ResponseFlags) buffer.ReadInt32();
+            responseFlags = (ResponseFlags)buffer.ReadInt32();
             cursorId = buffer.ReadInt64();
             startingFrom = buffer.ReadInt32();
             numberReturned = buffer.ReadInt32();
 
-
-            if ((responseFlags & ResponseFlags.CursorNotFound) != 0)
+            using (BsonReader bsonReader = BsonReader.Create(buffer, readerSettings))
             {
-                throw new MongoQueryException("Cursor not found.");
-            }
-            else if ((responseFlags & ResponseFlags.QueryFailure) != 0)
-            {
-                BsonDocument document = null;
-                using (BsonReader bsonReader = BsonReader.Create(buffer, readerSettings))
+                if ((responseFlags & ResponseFlags.CursorNotFound) != 0)
                 {
-                    document = BsonDocument.ReadFrom(bsonReader);
+                    throw new MongoQueryException("Cursor not found.");
                 }
-                var err = document["$err", null].AsString ?? "Unknown error.";
-                var message = string.Format("QueryFailure flag was {0} (response was {1}).", err, document.ToJson());
-                throw new MongoQueryException(message);
-            }
-            else
-            {
-                int i = 0;
-                documents = new List<TDocument>(numberReturned);
-                while (buffer.Position - messageStartPosition < messageLength && i < numberReturned)
+                if ((responseFlags & ResponseFlags.QueryFailure) != 0)
                 {
-                    using (BsonReader bsonReader = BsonReader.Create(buffer, readerSettings))
-                    {
-                        var document = (TDocument)BsonSerializer.Deserialize(bsonReader, typeof(TDocument), serializationOptions);
-                        documents.Add(document);
-                    }
-                    i++;
+                    var document = BsonDocument.ReadFrom(bsonReader);
+                    var err = document["$err", null].AsString ?? "Unknown error.";
+                    var message = string.Format("QueryFailure flag was {0} (response was {1}).", err, document.ToJson());
+                    throw new MongoQueryException(message);
+                }
+
+                documents = new List<TDocument>(numberReturned);
+                while (buffer.Position - messageStartPosition < messageLength)
+                {
+                    var document = (TDocument)BsonSerializer.Deserialize(bsonReader, typeof(TDocument), serializationOptions);
+                    documents.Add(document);
                 }
             }
         }
